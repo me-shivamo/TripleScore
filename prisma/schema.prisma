@@ -1,0 +1,356 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────────────────
+
+model User {
+  id          String   @id @default(cuid())
+  firebaseUid String   @unique
+  email       String   @unique
+  name        String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sessions         Session[]
+  profile          UserProfile?
+  chatMessages     ChatMessage[]
+  practiceSessions PracticeSession[]
+  mockTests        MockTest[]
+  gamification     Gamification?
+  missions         UserMission[]
+  badges           UserBadge[]
+  dailyStats       DailyStats[]
+  topicProgress    TopicProgress[]
+  revisionItems    RevisionItem[]
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── USER PROFILE & ONBOARDING ───────────────────────────────────────────────
+
+model UserProfile {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  examAttemptDate     DateTime?
+  dailyStudyHours     Float?
+  targetScore         Int?
+  previousScore       Int?
+  confidenceLevel     Int? // 1-10
+  strongSubjects      String[] // ["PHYSICS", "CHEMISTRY"]
+  weakSubjects        String[]
+  onboardingCompleted Boolean   @default(false)
+  onboardingStep      Int       @default(0)
+  studyWorkflow       Json? // Nova-generated personalized plan
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── NOVA CONVERSATION ───────────────────────────────────────────────────────
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  userId    String
+  role      MessageRole
+  content   String      @db.Text
+  metadata  Json? // onboarding step captured, detected intent, etc.
+  createdAt DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+// ─── QUESTION BANK ───────────────────────────────────────────────────────────
+
+model Question {
+  id            String     @id @default(cuid())
+  subject       Subject
+  chapter       String
+  topic         String
+  content       String     @db.Text
+  options       Json // [{ label: "A", text: "..." }, ...]
+  correctOption String
+  explanation   String     @db.Text
+  difficulty    Difficulty
+  tags          String[]
+  source        String? // "JEE 2023", "MOCK", etc.
+  createdAt     DateTime   @default(now())
+
+  attempts QuestionAttempt[]
+
+  @@index([subject, chapter, topic, difficulty])
+}
+
+enum Subject {
+  PHYSICS
+  CHEMISTRY
+  MATH
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+// ─── PRACTICE SESSIONS ───────────────────────────────────────────────────────
+
+model PracticeSession {
+  id             String      @id @default(cuid())
+  userId         String
+  subject        Subject?
+  chapter        String?
+  topic          String?
+  mode           SessionMode
+  totalQuestions Int
+  startedAt      DateTime    @default(now())
+  completedAt    DateTime?
+  durationSecs   Int?
+  xpEarned       Int         @default(0)
+
+  attempts QuestionAttempt[]
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+}
+
+enum SessionMode {
+  TOPIC
+  TIMED
+  ADAPTIVE
+  MOCK_REVIEW
+}
+
+model QuestionAttempt {
+  id             String   @id @default(cuid())
+  userId         String
+  sessionId      String
+  questionId     String
+  selectedOption String?
+  isCorrect      Boolean
+  timeTakenSecs  Int
+  attemptedAt    DateTime @default(now())
+
+  session  PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question Question        @relation(fields: [questionId], references: [id])
+
+  @@index([userId, questionId])
+  @@index([sessionId])
+}
+
+// ─── MOCK TESTS ──────────────────────────────────────────────────────────────
+
+model MockTest {
+  id             String         @id @default(cuid())
+  userId         String
+  testName       String
+  attemptDate    DateTime
+  totalQuestions Int            @default(90)
+  attempted      Int
+  correct        Int
+  incorrect      Int
+  skipped        Int
+  physicsScore   Int?
+  chemistryScore Int?
+  mathScore      Int?
+  totalMarks     Int?
+  maxMarks       Int            @default(300)
+  timeTakenMins  Int?
+  rawData        Json? // Detailed Q-by-Q data if provided
+  aiAnalysis     Json? // Nova's structured analysis output
+  analysisStatus AnalysisStatus @default(PENDING)
+  createdAt      DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, attemptDate])
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ─── GAMIFICATION ────────────────────────────────────────────────────────────
+
+model Gamification {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  xp              Int       @default(0)
+  level           Int       @default(1)
+  currentStreak   Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastActiveDate  DateTime?
+  totalStudyMins  Int       @default(0)
+  seasonRank      Int?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  xpHistory XPEvent[]
+}
+
+model XPEvent {
+  id             String       @id @default(cuid())
+  gamificationId String
+  amount         Int
+  reason         XPReason
+  referenceId    String? // sessionId, mockId, missionId
+  createdAt      DateTime     @default(now())
+
+  gamification Gamification @relation(fields: [gamificationId], references: [id], onDelete: Cascade)
+}
+
+enum XPReason {
+  PRACTICE_SESSION
+  CORRECT_ANSWER
+  MOCK_COMPLETED
+  MISSION_COMPLETED
+  STREAK_BONUS
+  ONBOARDING_COMPLETE
+  DAILY_LOGIN
+}
+
+model Mission {
+  id          String      @id @default(cuid())
+  title       String
+  description String
+  type        MissionType
+  xpReward    Int
+  target      Int // e.g., 10 (questions), 1 (mock)
+  metric      String // "questions_correct", "mock_completed", etc.
+  subject     Subject?
+  difficulty  Difficulty?
+  isActive    Boolean     @default(true)
+
+  userMissions UserMission[]
+}
+
+enum MissionType {
+  DAILY
+  WEEKLY
+}
+
+model UserMission {
+  id          String    @id @default(cuid())
+  userId      String
+  missionId   String
+  progress    Int       @default(0)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  assignedAt  DateTime  @default(now())
+  expiresAt   DateTime
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mission Mission @relation(fields: [missionId], references: [id])
+
+  @@index([userId, expiresAt])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  name        String
+  description String
+  iconUrl     String
+  condition   Json // { type: "streak", value: 7 }
+  xpReward    Int         @default(0)
+  rarity      BadgeRarity
+
+  userBadges UserBadge[]
+}
+
+enum BadgeRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+model UserBadge {
+  id       String   @id @default(cuid())
+  userId   String
+  badgeId  String
+  earnedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id])
+
+  @@unique([userId, badgeId])
+}
+
+// ─── TOPIC PROGRESS & ANALYTICS ──────────────────────────────────────────────
+
+model TopicProgress {
+  id             String    @id @default(cuid())
+  userId         String
+  subject        Subject
+  chapter        String
+  topic          String
+  totalAttempted Int       @default(0)
+  totalCorrect   Int       @default(0)
+  avgTimeSecs    Float     @default(0)
+  masteryScore   Float     @default(0) // 0.0 - 1.0
+  lastAttempted  DateTime?
+  isUnlocked     Boolean   @default(false)
+  updatedAt      DateTime  @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revisionItems RevisionItem[]
+
+  @@unique([userId, subject, chapter, topic])
+  @@index([userId, subject])
+}
+
+model DailyStats {
+  id                 String   @id @default(cuid())
+  userId             String
+  date               DateTime @db.Date
+  readinessScore     Int?
+  questionsAttempted Int      @default(0)
+  questionsCorrect   Int      @default(0)
+  studyMinutes       Int      @default(0)
+  xpEarned           Int      @default(0)
+  missionsCompleted  Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model RevisionItem {
+  id              String   @id @default(cuid())
+  userId          String
+  topicProgressId String
+  nextReviewAt    DateTime
+  intervalDays    Int      @default(1)
+  easeFactor      Float    @default(2.5) // SM-2 algorithm
+  repetitions     Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topicProgress TopicProgress @relation(fields: [topicProgressId], references: [id])
+
+  @@index([userId, nextReviewAt])
+}
