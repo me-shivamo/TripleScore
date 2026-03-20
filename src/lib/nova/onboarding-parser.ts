@@ -1,73 +1,78 @@
 import { getAIProvider } from "@/lib/ai/client";
 import { prisma } from "@/lib/prisma";
-import {
-  buildWorkflowGenerationPrompt,
-} from "./prompts";
+import { buildWorkflowGenerationPrompt } from "./prompts";
 
-interface OnboardingData {
-  examDate?: string; // ISO date string
+export interface HolisticOnboardingData {
+  examDate?: string; // "YYYY-MM-DD"
   strongSubjects?: string[];
   weakSubjects?: string[];
   dailyStudyHours?: number;
-  previousScore?: number;
-  confidenceLevel?: number;
-  isComplete?: boolean;
+  previousScore?: number; // 0-300
+  confidenceLevel?: number; // 1-10
+  studyStruggles?: string[];
+  motivationalState?: string;
 }
 
 /**
- * Uses AI to extract structured onboarding data from the latest user message.
- * Returns null if no new data was extracted.
+ * Checks if an assistant message contains the onboarding completion sentinel.
+ * Pure string check — zero AI cost.
  */
-export async function extractOnboardingData(
-  userMessage: string,
-  currentStep: number
-): Promise<OnboardingData | null> {
+export function detectOnboardingComplete(assistantMessage: string): boolean {
+  return assistantMessage.includes("__NOVA_ONBOARDING_COMPLETE__");
+}
+
+/**
+ * Extracts all structured onboarding data from the full conversation transcript
+ * in a single AI call. Called once when onboarding completes.
+ */
+export async function extractHolisticOnboardingData(
+  transcript: Array<{ role: "user" | "assistant"; content: string }>
+): Promise<HolisticOnboardingData> {
   const ai = getAIProvider();
 
-  const extractionPrompts: Record<number, string> = {
-    1: `Extract the JEE exam attempt date from this message. Return JSON: {"examDate": "YYYY-MM-DD"} or {"examDate": null} if not found.
-Message: "${userMessage}"`,
+  const transcriptText = transcript
+    .filter(
+      (m) =>
+        m.content !== "__NOVA_INIT__" &&
+        !m.content.includes("__NOVA_ONBOARDING_COMPLETE__")
+    )
+    .map((m) => `${m.role === "user" ? "Student" : "Nova"}: ${m.content}`)
+    .join("\n\n");
 
-    2: `Extract strong subjects from this message. Subjects can be: PHYSICS, CHEMISTRY, MATH.
-Return JSON: {"strongSubjects": ["PHYSICS", "CHEMISTRY"]} or {"strongSubjects": []} if not found.
-Message: "${userMessage}"`,
+  const prompt = `Extract structured data from this JEE student onboarding conversation.
 
-    3: `Extract weak subjects from this message. Subjects can be: PHYSICS, CHEMISTRY, MATH.
-Return JSON: {"weakSubjects": ["MATH"]} or {"weakSubjects": []} if not found.
-Message: "${userMessage}"`,
+CONVERSATION:
+${transcriptText}
 
-    4: `Extract daily study hours from this message. Return a number (can be decimal like 5.5).
-Return JSON: {"dailyStudyHours": 5.5} or {"dailyStudyHours": null} if not found.
-Message: "${userMessage}"`,
+Return ONLY valid JSON with no extra text:
+{
+  "examDate": "YYYY-MM-DD or null",
+  "strongSubjects": ["PHYSICS", "CHEMISTRY", "MATH"],
+  "weakSubjects": ["PHYSICS", "CHEMISTRY", "MATH"],
+  "dailyStudyHours": number or null,
+  "previousScore": number 0-300 or null,
+  "confidenceLevel": number 1-10 or null,
+  "studyStruggles": ["short phrase per struggle the student mentioned"],
+  "motivationalState": "one sentence describing their emotional or motivational state, or null"
+}
 
-    5: `Extract either a previous mock/exam score (0-300) or confidence level (1-10) from this message.
-Return JSON: {"previousScore": 145, "confidenceLevel": null} or {"previousScore": null, "confidenceLevel": 6} — include both fields.
-Message: "${userMessage}"`,
-  };
+Rules:
+- examDate: convert "April 2025" or "JEE 2026" to YYYY-MM-DD using the 1st of the month
+- subjects: only include what the student explicitly stated, not Nova's inferences
+- studyStruggles: use the student's own words closely, keep each entry brief
+- Set null or empty array [] for any field that cannot be determined from the conversation`;
 
-  const prompt = extractionPrompts[currentStep];
-  if (!prompt) return null;
-
-  try {
-    const data = await ai.parseStructured<Record<string, unknown>>(prompt);
-    return data as OnboardingData;
-  } catch {
-    return null;
-  }
+  return ai.parseStructured<HolisticOnboardingData>(prompt);
 }
 
 /**
- * Saves extracted onboarding data to the UserProfile and advances the step.
- * Returns the new step number.
+ * Saves holistic onboarding data to UserProfile.
  */
-export async function saveOnboardingStep(
+export async function saveHolisticOnboardingData(
   userId: string,
-  step: number,
-  data: OnboardingData
-): Promise<number> {
-  const updateData: Record<string, unknown> = {
-    onboardingStep: step + 1,
-  };
+  data: HolisticOnboardingData
+): Promise<void> {
+  const updateData: Record<string, unknown> = {};
 
   if (data.examDate) {
     const parsed = new Date(data.examDate);
@@ -81,26 +86,27 @@ export async function saveOnboardingStep(
   if (data.weakSubjects?.length) {
     updateData.weakSubjects = data.weakSubjects;
   }
-  if (data.dailyStudyHours !== undefined && data.dailyStudyHours !== null) {
+  if (data.dailyStudyHours != null) {
     updateData.dailyStudyHours = data.dailyStudyHours;
   }
-  if (data.previousScore !== undefined && data.previousScore !== null) {
+  if (data.previousScore != null) {
     updateData.previousScore = data.previousScore;
   }
-  if (data.confidenceLevel !== undefined && data.confidenceLevel !== null) {
+  if (data.confidenceLevel != null) {
     updateData.confidenceLevel = data.confidenceLevel;
+  }
+  if (data.studyStruggles?.length) {
+    updateData.studyStruggles = data.studyStruggles;
+  }
+  if (data.motivationalState) {
+    updateData.motivationalState = data.motivationalState;
   }
 
   await prisma.userProfile.upsert({
     where: { userId },
     update: updateData,
-    create: {
-      userId,
-      onboardingStep: step + 1,
-    },
+    create: { userId, ...updateData },
   });
-
-  return step + 1;
 }
 
 /**
@@ -119,13 +125,14 @@ export async function completeOnboarding(userId: string): Promise<void> {
     dailyHours: profile.dailyStudyHours ?? 4,
     previousScore: profile.previousScore ?? undefined,
     confidenceLevel: profile.confidenceLevel ?? undefined,
+    studyStruggles: profile.studyStruggles,
+    motivationalState: profile.motivationalState ?? undefined,
   });
 
   let studyWorkflow: Record<string, unknown> = {};
   try {
     studyWorkflow = await ai.parseStructured<Record<string, unknown>>(prompt);
   } catch {
-    // Fallback: basic workflow
     studyWorkflow = {
       summary: "Focus on your weak subjects daily with consistent practice.",
     };

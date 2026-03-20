@@ -18,17 +18,18 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  sessions         Session[]
-  profile          UserProfile?
-  chatMessages     ChatMessage[]
-  practiceSessions PracticeSession[]
-  mockTests        MockTest[]
-  gamification     Gamification?
-  missions         UserMission[]
-  badges           UserBadge[]
-  dailyStats       DailyStats[]
-  topicProgress    TopicProgress[]
-  revisionItems    RevisionItem[]
+  sessions          Session[]
+  profile           UserProfile?
+  chatMessages      ChatMessage[]
+  practiceSessions  PracticeSession[]
+  mockTests         MockTest[]
+  gamification      Gamification?
+  missions          UserMission[]
+  badges            UserBadge[]
+  dailyStats        DailyStats[]
+  topicProgress     TopicProgress[]
+  revisionItems     RevisionItem[]
+  diagnosticSession DiagnosticSession?
 }
 
 model Session {
@@ -51,6 +52,8 @@ model UserProfile {
   confidenceLevel     Int? // 1-10
   strongSubjects      String[] // ["PHYSICS", "CHEMISTRY"]
   weakSubjects        String[]
+  studyStruggles      String[] // e.g., ["exam panic", "can't finish Organic Chemistry in time"]
+  motivationalState   String? // e.g., "dropped a year, under family pressure, anxious"
   onboardingCompleted Boolean   @default(false)
   onboardingStep      Int       @default(0)
   studyWorkflow       Json? // Nova-generated personalized plan
@@ -83,22 +86,28 @@ enum MessageRole {
 // ─── QUESTION BANK ───────────────────────────────────────────────────────────
 
 model Question {
-  id            String     @id @default(cuid())
+  id            String       @id @default(cuid())
   subject       Subject
   chapter       String
   topic         String
-  content       String     @db.Text
-  options       Json // [{ label: "A", text: "..." }, ...]
-  correctOption String
-  explanation   String     @db.Text
+  content       String       @db.Text
+  questionType  QuestionType @default(MCQ)
+  options       Json // [{ label: "A", text: "..." }, ...] — empty array for INTEGER type
+  correctOption String // option label for MCQ, numeric string for INTEGER
+  explanation   String       @db.Text
   difficulty    Difficulty
   tags          String[]
   source        String? // "JEE 2023", "MOCK", etc.
-  createdAt     DateTime   @default(now())
+  createdAt     DateTime     @default(now())
 
   attempts QuestionAttempt[]
 
   @@index([subject, chapter, topic, difficulty])
+}
+
+enum QuestionType {
+  MCQ
+  INTEGER
 }
 
 enum Subject {
@@ -229,6 +238,7 @@ enum XPReason {
   STREAK_BONUS
   ONBOARDING_COMPLETE
   DAILY_LOGIN
+  DIAGNOSTIC_COMPLETE
 }
 
 model Mission {
@@ -353,4 +363,30 @@ model RevisionItem {
   topicProgress TopicProgress @relation(fields: [topicProgressId], references: [id])
 
   @@index([userId, nextReviewAt])
+}
+
+// ─── DIAGNOSTIC SESSION ───────────────────────────────────────────────────────
+
+model DiagnosticSession {
+  id             String           @id @default(cuid())
+  userId         String           @unique
+  status         DiagnosticStatus @default(IN_PROGRESS)
+  test1SessionId String?          // FK to PracticeSession for strong-subject test
+  test2SessionId String?          // FK to PracticeSession for weak-subject test
+  test1Subject   String?          // e.g. "PHYSICS"
+  test1Chapter   String?          // e.g. "Electrostatics"
+  test2Subject   String?          // e.g. "MATHEMATICS"
+  test2Chapter   String?          // e.g. "Quadratic Equations"
+  skipped        Boolean          @default(false)
+  completedAt    DateTime?
+  createdAt      DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum DiagnosticStatus {
+  IN_PROGRESS
+  TEST1_COMPLETE
+  COMPLETED
+  SKIPPED
 }

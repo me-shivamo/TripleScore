@@ -22,13 +22,12 @@ export default function AppLayout({
     }
   }, [status, router]);
 
-  // Full-screen during onboarding — hide all chrome
+  // Full-screen during onboarding and diagnostic — hide all chrome
   const isOnboarding =
-    pathname === "/chat" && session?.user.onboardingCompleted === false;
+    (pathname === "/chat" && session?.user.onboardingCompleted === false) ||
+    pathname === "/diagnostic";
 
-  if (status === "loading") return null;
-
-  if (isOnboarding) {
+  if (isOnboarding || status === "loading") {
     return <>{children}</>;
   }
 

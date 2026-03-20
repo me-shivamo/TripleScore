@@ -40,6 +40,14 @@ export async function buildNovaContext(
     context.weakSubjects = user.profile.weakSubjects;
   }
 
+  if (user.profile?.studyStruggles?.length) {
+    context.studyStruggles = user.profile.studyStruggles;
+  }
+
+  if (user.profile?.motivationalState) {
+    context.motivationalState = user.profile.motivationalState;
+  }
+
   if (gamification) {
     context.currentStreak = gamification.currentStreak;
   }

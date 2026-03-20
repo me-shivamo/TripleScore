@@ -20,6 +20,7 @@ const XP_TABLE: Record<string, number> = {
   STREAK_BONUS: 10,
   ONBOARDING_COMPLETE: 100,
   DAILY_LOGIN: 5,
+  DIAGNOSTIC_COMPLETE: 50, // base; submit route adds correctAnswer bonus on top
 };
 
 export function getXPForCorrectAnswer(difficulty: Difficulty): number {

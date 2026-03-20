@@ -32,10 +32,6 @@ export function OnboardingChat({
     .reverse()
     .find((m) => m.role === "user" && m.content !== "__NOVA_INIT__");
 
-  const currentStep = messages.filter(
-    (m) => m.role === "user" && m.content !== "__NOVA_INIT__"
-  ).length;
-
   // Welcome state: no messages yet, or first assistant message still empty/streaming
   const isWelcome =
     messages.length === 0 ||
@@ -130,20 +126,10 @@ export function OnboardingChat({
               )}
             </div>
 
-            {/* Progress dots */}
-            <div className="flex gap-2 items-center">
-              {[1, 2, 3, 4, 5].map((step) => (
-                <div
-                  key={step}
-                  className={cn(
-                    "h-2 rounded-full transition-all duration-300",
-                    step <= currentStep
-                      ? "bg-primary w-4"
-                      : "bg-secondary w-2"
-                  )}
-                />
-              ))}
-            </div>
+            {/* Progress indicator */}
+            <p className="text-xs text-muted-foreground animate-pulse">
+              Getting to know you...
+            </p>
           </>
         )}
       </div>

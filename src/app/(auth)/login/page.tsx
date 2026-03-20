@@ -8,7 +8,6 @@ import { signIn, useSession } from "next-auth/react";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -82,9 +81,9 @@ export default function LoginPage() {
         </div>
 
         {/* Badge */}
-        <Badge variant="default" className="text-[10px] uppercase tracking-widest px-3 py-1 w-fit">
+        <span className="text-[11px] uppercase tracking-widest text-muted-foreground font-medium">
           AI-Powered JEE Prep
-        </Badge>
+        </span>
 
         {/* Headline */}
         <h1
@@ -98,7 +97,7 @@ export default function LoginPage() {
 
         {/* Subheadline */}
         <p className="text-base text-muted-foreground max-w-sm leading-relaxed">
-          Your AI tutor, adaptive practice, and performance analytics — built for JEE aspirants.
+          Less guessing, more preparing. Built for students who want real results.
         </p>
 
         {/* Stat pills */}
@@ -152,8 +151,6 @@ export default function LoginPage() {
           )}
         </Button>
 
-        {/* Trust copy */}
-        <p className="text-[11px] text-muted-foreground">Free to start · No credit card required</p>
       </div>
 
       {/* RIGHT COLUMN — desktop only */}

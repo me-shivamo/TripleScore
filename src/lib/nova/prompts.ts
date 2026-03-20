@@ -16,6 +16,8 @@ export interface NovaContext {
   lastMockScore?: number;
   missionsCompleted?: number;
   totalMissions?: number;
+  studyStruggles?: string[];
+  motivationalState?: string;
 }
 
 const CORE_IDENTITY = `You are Nova, an AI study companion for JEE (Joint Entrance Examination) aspirants.
@@ -32,22 +34,40 @@ Your personality:
 Your core mission: Help students crack JEE by improving their accuracy, speed, consistency, and strategy.`;
 
 const ONBOARDING_INSTRUCTIONS = `
-You are in ONBOARDING mode. Your goal is to learn about this student through natural conversation.
+You are in ONBOARDING mode. This is your very first conversation with this student.
 
-You need to gather these 5 pieces of information (one per message, naturally):
-1. Exam attempt date (month/year)
-2. Strong subjects (Physics, Chemistry, Math)
-3. Weak subjects
-4. Daily study hours available
-5. Previous mock/exam score (or confidence level 1-10 if no prior attempt)
+YOUR GOAL: Understand who this student really is — their situation, struggles, and mindset — not just collect stats. You need enough to be genuinely useful as their long-term study companion.
 
-Guidelines:
-- Ask ONE question at a time — never multiple questions in one message
-- Keep it conversational, not like a form
-- Acknowledge their answer warmly before asking the next question
-- After collecting all 5 pieces, generate their personalized study workflow
+WHAT TO UNDERSTAND (gather these naturally, not in a fixed order):
+- Their JEE exam date / attempt timeline
+- Which subjects feel strong vs. difficult
+- How many hours a day they can realistically study
+- Their biggest specific struggle — e.g., "I panic during exams", "I keep forgetting what I study", "I've already dropped a year and feel stuck", "Organic Chemistry makes no sense to me"
+- Their emotional state — are they confident? anxious? burnt out? motivated but directionless?
+- Any previous mock/test score, or a gut-feel confidence rating (1-10) if no prior attempt
+- What has or hasn't worked for them in studying so far
 
-Start by introducing yourself warmly and asking about their exam date.`;
+HOW TO HAVE THIS CONVERSATION:
+- Start by introducing yourself warmly and asking one open question about where they are in their JEE journey — NOT "when is your exam date?"
+- Let their answer guide your next question. If they mention stress or a struggle, explore that before moving to logistics
+- Ask genuine follow-up questions — don't jump to the next topic if something is incomplete or interesting
+- Acknowledge what they share before moving on (brief and real, not fake positivity)
+- ONE question per message. Never ask two things at once
+- Keep messages short and conversational — this is a chat, not a report
+- After 8–12 messages, you will have enough. Do not drag it out unnecessarily
+- You MUST still gather exam date, strong/weak subjects, and daily hours somewhere in the conversation — weave these in naturally when the moment is right
+
+COMPLETION SIGNAL:
+When you have a full enough picture — exam timeline, subject strengths/weaknesses, their key struggle(s), and their emotional state — close with a warm 2-sentence summary of what you've understood, then end your message with this exact phrase on its own line:
+__NOVA_ONBOARDING_COMPLETE__
+
+Example closing:
+"You've got 4 months, Physics is your anchor, and the real enemy right now is exam panic — not content gaps. Let's build something that actually prepares you for that pressure.
+
+__NOVA_ONBOARDING_COMPLETE__"
+
+CRITICAL: You MUST emit __NOVA_ONBOARDING_COMPLETE__ as soon as you have gathered: exam date, at least one strong or weak subject, and the student's key struggle. Do NOT continue asking questions or switch to study help — emit the sentinel and close. This is required for the app to proceed.
+Only use __NOVA_ONBOARDING_COMPLETE__ once, in your final onboarding message. Never use it in any other message.`;
 
 const COMPANION_INSTRUCTIONS = `
 You are in COMPANION mode. You are the student's ongoing study buddy.
@@ -136,6 +156,14 @@ export function buildSystemPrompt(
       );
     }
 
+    if (context.studyStruggles?.length) {
+      contextLines.push(`Known struggles: ${context.studyStruggles.join("; ")}`);
+    }
+
+    if (context.motivationalState) {
+      contextLines.push(`Emotional context: ${context.motivationalState}`);
+    }
+
     if (contextLines.length > 0) {
       prompt += `\n\n--- STUDENT CONTEXT ---\n${contextLines.join("\n")}\n-----------------------`;
     }
@@ -164,16 +192,20 @@ export function buildWorkflowGenerationPrompt(profileData: {
   dailyHours: number;
   previousScore?: number;
   confidenceLevel?: number;
+  studyStruggles?: string[];
+  motivationalState?: string;
 }): string {
   return `Based on this JEE student's profile, generate a personalized 4-week study workflow in JSON format.
 
 Profile:
 - Exam date: ${profileData.examDate}
-- Strong subjects: ${profileData.strongSubjects.join(", ")}
-- Weak subjects: ${profileData.weakSubjects.join(", ")}
+- Strong subjects: ${profileData.strongSubjects.join(", ") || "Not specified"}
+- Weak subjects: ${profileData.weakSubjects.join(", ") || "Not specified"}
 - Daily study hours: ${profileData.dailyHours}
 - Previous score: ${profileData.previousScore ?? "First attempt"}
 - Confidence: ${profileData.confidenceLevel ?? "Not provided"}/10
+- Key struggles: ${profileData.studyStruggles?.join(", ") ?? "Not specified"}
+- Emotional context: ${profileData.motivationalState ?? "Not specified"}
 
 Return a JSON object with:
 {

@@ -6,8 +6,9 @@ import { getAIProvider } from "@/lib/ai/client";
 import { buildSystemPrompt } from "@/lib/nova/prompts";
 import { buildNovaContext } from "@/lib/nova/context-builder";
 import {
-  extractOnboardingData,
-  saveOnboardingStep,
+  detectOnboardingComplete,
+  extractHolisticOnboardingData,
+  saveHolisticOnboardingData,
   completeOnboarding,
 } from "@/lib/nova/onboarding-parser";
 import type { NovaMode } from "@/lib/nova/prompts";
@@ -55,10 +56,16 @@ export async function POST(req: NextRequest) {
   const ai = getAIProvider();
   let fullResponse = "";
 
-  // Get user profile for onboarding step
+  // Check if onboarding is still active
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  const currentStep = profile?.onboardingStep ?? 0;
   const isOnboarding = mode === "ONBOARDING" && !profile?.onboardingCompleted;
+
+  // Count real onboarding messages (exclude sentinels) for fallback completion
+  const realMessageCount = history.filter(
+    (m) =>
+      m.content !== "__NOVA_INIT__" &&
+      !m.content.includes("__NOVA_ONBOARDING_COMPLETE__")
+  ).length;
 
   try {
     const stream = await ai.streamChat(messages, systemPrompt);
@@ -85,35 +92,36 @@ export async function POST(req: NextRequest) {
             userId,
             role: "ASSISTANT",
             content: fullResponse,
-            metadata: { mode, onboardingStep: currentStep },
+            metadata: { mode },
           },
         });
 
-        // Handle onboarding parsing
-        if (isOnboarding && currentStep >= 1 && currentStep <= 5) {
-          try {
-            const extracted = await extractOnboardingData(message, currentStep);
-            if (extracted) {
-              const newStep = await saveOnboardingStep(
-                userId,
-                currentStep,
-                extracted
-              );
-              // If step 5 complete, generate workflow
-              if (newStep >= 5) {
-                await completeOnboarding(userId);
-              }
-            }
-          } catch (err) {
-            console.error("Onboarding parsing error:", err);
-          }
-        } else if (isOnboarding && currentStep === 0) {
-          // Advance past intro step
-          await prisma.userProfile.upsert({
+        // Handle onboarding completion via sentinel detection or message count fallback
+        const shouldComplete =
+          isOnboarding &&
+          (detectOnboardingComplete(fullResponse) || realMessageCount >= 14);
+
+        if (shouldComplete) {
+          // Fetch full conversation transcript for holistic extraction
+          const fullHistory = await prisma.chatMessage.findMany({
             where: { userId },
-            update: { onboardingStep: 1 },
-            create: { userId, onboardingStep: 1 },
+            orderBy: { createdAt: "asc" },
+            select: { role: true, content: true },
           });
+          const transcript = fullHistory.map((m) => ({
+            role: m.role.toLowerCase() as "user" | "assistant",
+            content: m.content,
+          }));
+
+          try {
+            const extracted = await extractHolisticOnboardingData(transcript);
+            await saveHolisticOnboardingData(userId, extracted);
+          } catch (err) {
+            console.error("Holistic onboarding extraction failed:", err);
+          }
+
+          // Always complete onboarding even if extraction partially fails
+          await completeOnboarding(userId);
         }
       }
     })();

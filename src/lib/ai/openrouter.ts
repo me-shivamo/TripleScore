@@ -10,8 +10,8 @@ const client = new OpenAI({
   },
 });
 
-// Model to use via OpenRouter — Gemini 2.0 Flash (fast & cheap)
-const MODEL = "google/gemini-2.0-flash-001";
+// Model to use via OpenRouter — Gemini 2.5 Flash
+const MODEL = "google/gemini-2.5-flash";
 
 export const openrouterProvider: AIProvider = {
   async streamChat(

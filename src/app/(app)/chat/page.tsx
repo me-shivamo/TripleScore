@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { ChatWindow } from "@/components/nova/ChatWindow";
@@ -13,42 +13,62 @@ export default function ChatPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
 
+  const { status: sessionStatus } = useSession();
   const onboardingCompleted = session?.user.onboardingCompleted ?? false;
-  const mode = onboardingCompleted ? "COMPANION" : "ONBOARDING";
+  // Don't derive mode until session is resolved — prevents hook from getting wrong initial mode
+  const mode = sessionStatus === "loading"
+    ? "ONBOARDING"
+    : onboardingCompleted ? "COMPANION" : "ONBOARDING";
 
-  const { messages, isLoading, sendMessage, stopStreaming } = useNovaChat(mode);
+  const { messages, isLoading, isHistoryLoading, sendMessage, stopStreaming } =
+    useNovaChat(mode);
 
-  // Start with Nova's greeting for onboarding
+  const redirectPendingRef = useRef(false);
+  // Track whether we have started polling so we don't restart when onboardingCompleted flips
+  const pollingStartedRef = useRef(false);
+
+  // Fire Nova's greeting only after session + history both loaded and no prior messages
   useEffect(() => {
+    if (sessionStatus === "loading" || isHistoryLoading) return;
     if (messages.length === 0 && !onboardingCompleted) {
-      // Auto-trigger Nova's opening message
       const timer = setTimeout(() => {
         sendMessage("__NOVA_INIT__");
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, []);
+  }, [sessionStatus, isHistoryLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll for onboarding completion every 5s — starts once session is loaded, runs until complete
+  useEffect(() => {
+    if (sessionStatus === "loading") return;
+    if (onboardingCompleted || redirectPendingRef.current) return;
+    if (pollingStartedRef.current) return; // already polling — don't restart
+    pollingStartedRef.current = true;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch("/api/nova/onboarding-status");
+        if (!res.ok) return;
+        const { completed } = await res.json();
+        if (completed && !redirectPendingRef.current) {
+          redirectPendingRef.current = true;
+          clearInterval(interval);
+          queryClient.invalidateQueries({ queryKey: ["session"] });
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+            router.push("/diagnostic");
+          }, 3000);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [sessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (message: string) => {
     await sendMessage(message);
-
-    // After each message during onboarding, check if completed
-    if (!onboardingCompleted) {
-      queryClient.invalidateQueries({ queryKey: ["session"] });
-
-      // Check if onboarding is now complete
-      const res = await fetch("/api/nova/onboarding-status");
-      if (res.ok) {
-        const { completed } = await res.json();
-        if (completed) {
-          // Give time for final message to render, then redirect
-          setTimeout(() => {
-            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-            router.push("/dashboard");
-          }, 3000);
-        }
-      }
-    }
   };
 
   if (mode === "ONBOARDING") {
