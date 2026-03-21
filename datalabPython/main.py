@@ -213,7 +213,7 @@ async def extract_page_markdown():
     # 1. Convert with paginated markdown so each page can be split cleanly
     options = ConvertOptions(
         output_format="markdown",
-        mode="accurate",
+        mode="balanced",
         paginate=True,
         page_range=page_range,
     )
