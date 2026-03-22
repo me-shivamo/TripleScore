@@ -7,6 +7,13 @@ import { ChapterSelector } from "@/components/diagnostic/ChapterSelector";
 import { QuizScreen, QuestionResult, DiagnosticQuestion } from "@/components/diagnostic/QuizScreen";
 import { TestResults } from "@/components/diagnostic/TestResults";
 import { FinalSummary } from "@/components/diagnostic/FinalSummary";
+import {
+  startDiagnostic,
+  getQuestions,
+  submitDiagnostic,
+  skipDiagnostic,
+} from "@/services/diagnostic";
+import { DiagnosticStartResponse, SubmitResult } from "@/types/api";
 
 type Screen =
   | "loading"
@@ -18,30 +25,10 @@ type Screen =
   | "test2-quiz"
   | "final-results";
 
-interface StartData {
-  alreadyDone: boolean;
-  profile: {
-    name?: string | null;
-    examAttemptDate?: string | null;
-    strongSubjects?: string[];
-    weakSubjects?: string[];
-    previousScore?: number | null;
-    dailyStudyHours?: number | null;
-  };
-  strongSuggestion: { subject: string; chapter: string } | null;
-  weakSuggestion: { subject: string; chapter: string } | null;
-  chaptersBySubject: Record<string, string[]>;
-}
-
-interface SubmitResult {
-  score: { correct: number; total: number };
-  masteryScore: number;
-}
-
 export default function DiagnosticPage() {
   const router = useRouter();
   const [screen, setScreen] = useState<Screen>("loading");
-  const [startData, setStartData] = useState<StartData | null>(null);
+  const [startData, setStartData] = useState<DiagnosticStartResponse | null>(null);
 
   // Test 1 state
   const [test1Subject, setTest1Subject] = useState("");
@@ -60,24 +47,22 @@ export default function DiagnosticPage() {
 
   // Load diagnostic session on mount
   useEffect(() => {
-    fetch("/api/diagnostic/start", { method: "POST" })
-      .then((r) => r.json())
-      .then((data: StartData) => {
-        if (data.alreadyDone) {
+    startDiagnostic()
+      .then((data) => {
+        if (data.already_done) {
           router.replace("/dashboard");
           return;
         }
         setStartData(data);
         setScreen("summary");
 
-        // Pre-set suggestions
-        if (data.strongSuggestion) {
-          setTest1Subject(data.strongSuggestion.subject);
-          setTest1Chapter(data.strongSuggestion.chapter);
+        if (data.strong_suggestion) {
+          setTest1Subject(data.strong_suggestion.subject);
+          setTest1Chapter(data.strong_suggestion.chapter);
         }
-        if (data.weakSuggestion) {
-          setTest2Subject(data.weakSuggestion.subject);
-          setTest2Chapter(data.weakSuggestion.chapter);
+        if (data.weak_suggestion) {
+          setTest2Subject(data.weak_suggestion.subject);
+          setTest2Chapter(data.weak_suggestion.chapter);
         }
       })
       .catch(() => router.replace("/dashboard"));
@@ -85,18 +70,13 @@ export default function DiagnosticPage() {
 
   const handleSkip = async () => {
     setIsSkipping(true);
-    await fetch("/api/diagnostic/skip", { method: "POST" });
+    await skipDiagnostic();
     router.push("/dashboard");
   };
 
   const loadQuestions = async (subject: string, chapter: string) => {
-    const res = await fetch("/api/diagnostic/questions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subject, chapter, count: 12 }),
-    });
-    const data = await res.json();
-    return data.questions as DiagnosticQuestion[];
+    const data = await getQuestions(subject, chapter, 12);
+    return data.questions;
   };
 
   // ── Test 1 ──────────────────────────────────────────────────────────────────
@@ -111,17 +91,7 @@ export default function DiagnosticPage() {
 
   const handleTest1Complete = async (results: QuestionResult[]) => {
     setIsSubmitting(true);
-    const res = await fetch("/api/diagnostic/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        testNumber: 1,
-        subject: test1Subject,
-        chapter: test1Chapter,
-        attempts: results,
-      }),
-    });
-    const data: SubmitResult = await res.json();
+    const data = await submitDiagnostic(1, test1Subject, test1Chapter, results);
     setTest1Result(data);
     setIsSubmitting(false);
     setScreen("test1-results");
@@ -139,17 +109,7 @@ export default function DiagnosticPage() {
 
   const handleTest2Complete = async (results: QuestionResult[]) => {
     setIsSubmitting(true);
-    const res = await fetch("/api/diagnostic/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        testNumber: 2,
-        subject: test2Subject,
-        chapter: test2Chapter,
-        attempts: results,
-      }),
-    });
-    const data: SubmitResult = await res.json();
+    const data = await submitDiagnostic(2, test2Subject, test2Chapter, results);
     setTest2Result(data);
     setIsSubmitting(false);
     setScreen("final-results");
@@ -180,18 +140,17 @@ export default function DiagnosticPage() {
   }
 
   if (screen === "test1-select") {
-    if (!startData.strongSuggestion) {
-      // No strong subject — skip directly to test2
+    if (!startData.strong_suggestion) {
       setScreen("test2-select");
       return null;
     }
     return (
       <ChapterSelector
         testNumber={1}
-        suggestedSubject={startData.strongSuggestion.subject}
-        suggestedChapter={startData.strongSuggestion.chapter}
+        suggestedSubject={startData.strong_suggestion.subject}
+        suggestedChapter={startData.strong_suggestion.chapter}
         availableChapters={
-          startData.chaptersBySubject[startData.strongSuggestion.subject] ?? []
+          (startData.chapters_by_subject ?? {})[startData.strong_suggestion.subject] ?? []
         }
         onConfirm={handleTest1ChapterConfirm}
       />
@@ -217,15 +176,15 @@ export default function DiagnosticPage() {
         chapter={test1Chapter}
         correctCount={test1Result.score.correct}
         totalCount={test1Result.score.total}
-        masteryScore={test1Result.masteryScore}
+        masteryScore={test1Result.mastery_score}
         onContinue={() =>
-          startData.weakSuggestion
+          startData.weak_suggestion
             ? setScreen("test2-select")
             : setScreen("final-results")
         }
         onSkip={handleSkip}
         continueLabel={
-          startData.weakSuggestion
+          startData.weak_suggestion
             ? "Test My Weak Area"
             : "Go to Dashboard"
         }
@@ -235,17 +194,17 @@ export default function DiagnosticPage() {
   }
 
   if (screen === "test2-select") {
-    if (!startData.weakSuggestion) {
+    if (!startData.weak_suggestion) {
       router.push("/dashboard");
       return null;
     }
     return (
       <ChapterSelector
         testNumber={2}
-        suggestedSubject={startData.weakSuggestion.subject}
-        suggestedChapter={startData.weakSuggestion.chapter}
+        suggestedSubject={startData.weak_suggestion.subject}
+        suggestedChapter={startData.weak_suggestion.chapter}
         availableChapters={
-          startData.chaptersBySubject[startData.weakSuggestion.subject] ?? []
+          (startData.chapters_by_subject ?? {})[startData.weak_suggestion.subject] ?? []
         }
         onConfirm={handleTest2ChapterConfirm}
       />
@@ -269,7 +228,7 @@ export default function DiagnosticPage() {
         test1={{
           subject: test1Subject,
           chapter: test1Chapter,
-          masteryScore: test1Result.masteryScore,
+          masteryScore: test1Result.mastery_score,
           correctCount: test1Result.score.correct,
           totalCount: test1Result.score.total,
         }}
@@ -278,14 +237,14 @@ export default function DiagnosticPage() {
             ? {
                 subject: test2Subject,
                 chapter: test2Chapter,
-                masteryScore: test2Result.masteryScore,
+                masteryScore: test2Result.mastery_score,
                 correctCount: test2Result.score.correct,
                 totalCount: test2Result.score.total,
               }
             : {
                 subject: test1Subject,
                 chapter: test1Chapter,
-                masteryScore: test1Result.masteryScore,
+                masteryScore: test1Result.mastery_score,
                 correctCount: test1Result.score.correct,
                 totalCount: test1Result.score.total,
               }
@@ -295,7 +254,6 @@ export default function DiagnosticPage() {
     );
   }
 
-  // Fallback
   router.push("/dashboard");
   return null;
 }

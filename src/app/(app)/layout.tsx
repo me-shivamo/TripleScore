@@ -1,33 +1,42 @@
 "use client";
 
-import { useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
 import { MobileNav } from "@/components/layout/MobileNav";
+import { useAuth } from "@/hooks/useAuth";
+import { getOnboardingStatus } from "@/services/nova";
 
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session, status } = useSession();
+  const { user, loading } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
+    if (!loading && !user) {
       router.push("/login");
     }
-  }, [status, router]);
+  }, [user, loading, router]);
 
-  // Full-screen during onboarding and diagnostic — hide all chrome
+  // Fetch onboarding status from backend once user is authenticated
+  useEffect(() => {
+    if (!user) return;
+    getOnboardingStatus()
+      .then((data) => setOnboardingCompleted(data.onboarding_completed ?? false))
+      .catch(() => setOnboardingCompleted(false));
+  }, [user]);
+
   const isOnboarding =
-    (pathname === "/chat" && session?.user.onboardingCompleted === false) ||
+    (pathname === "/chat" && onboardingCompleted === false) ||
     pathname === "/diagnostic";
 
-  if (isOnboarding || status === "loading") {
+  if (isOnboarding || loading || onboardingCompleted === null) {
     return <>{children}</>;
   }
 

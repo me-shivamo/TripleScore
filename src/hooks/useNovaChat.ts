@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { NovaMode } from "@/lib/nova/prompts";
+import { apiStream } from "@/lib/api-client";
+import { getHistory } from "@/services/nova";
+
+export type NovaMode = "ONBOARDING" | "COMPANION" | "MOCK_ANALYSIS";
 
 export interface Message {
   id: string;
@@ -26,7 +29,7 @@ export function useNovaChat(initialMode: NovaMode = "COMPANION") {
     setMode(initialMode);
   }, [initialMode]);
 
-  // Load conversation history from DB on mount (once per page lifecycle)
+  // Load conversation history from backend on mount (once per page lifecycle)
   useEffect(() => {
     if (historyFetchDone) {
       setIsHistoryLoading(false);
@@ -34,9 +37,8 @@ export function useNovaChat(initialMode: NovaMode = "COMPANION") {
     }
     historyFetchDone = true;
 
-    fetch("/api/nova/history")
-      .then((r) => r.json())
-      .then(({ messages: history }: { messages: Message[] }) => {
+    getHistory()
+      .then(({ messages: history }) => {
         const filtered = history.filter(
           (m) =>
             m.content !== "__NOVA_INIT__" &&
@@ -78,12 +80,7 @@ export function useNovaChat(initialMode: NovaMode = "COMPANION") {
       abortControllerRef.current = new AbortController();
 
       try {
-        const response = await fetch("/api/nova/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: content.trim(), mode }),
-          signal: abortControllerRef.current.signal,
-        });
+        const response = await apiStream("/nova/chat", { message: content.trim(), mode });
 
         if (!response.ok || !response.body) {
           throw new Error("Failed to get response from Nova");

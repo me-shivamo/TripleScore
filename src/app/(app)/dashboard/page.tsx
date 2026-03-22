@@ -1,7 +1,6 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { ReadinessScore } from "@/components/dashboard/ReadinessScore";
@@ -11,27 +10,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageCircle, BookOpen, ClipboardList, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/hooks/useAuth";
+import { getDashboard } from "@/services/dashboard";
+import { DashboardResponse } from "@/types/api";
 
 export default function DashboardPage() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (session && !session.user.onboardingCompleted) {
-      router.push("/chat");
-    }
-  }, [session, router]);
-
-  const { data, isLoading } = useQuery({
+  const { data, isLoading } = useQuery<DashboardResponse>({
     queryKey: ["dashboard"],
-    queryFn: async () => {
-      const res = await fetch("/api/dashboard");
-      if (!res.ok) throw new Error("Failed to load dashboard");
-      return res.json();
-    },
-    enabled: !!session?.user,
+    queryFn: getDashboard,
+    enabled: !!user,
     refetchInterval: 60_000,
   });
+
+  useEffect(() => {
+    if (data && !data.profile?.onboarding_completed) {
+      router.push("/chat");
+    }
+  }, [data, router]);
 
   if (isLoading || !data) {
     return (
@@ -42,9 +40,9 @@ export default function DashboardPage() {
   }
 
   const accuracyToday =
-    data.todayStats.questionsAttempted > 0
+    data.today_stats.questions_attempted > 0
       ? Math.round(
-          (data.todayStats.questionsCorrect / data.todayStats.questionsAttempted) * 100
+          (data.today_stats.questions_correct / data.today_stats.questions_attempted) * 100
         )
       : 0;
 
@@ -55,7 +53,7 @@ export default function DashboardPage() {
       {/* Greeting */}
       <div>
         <h1 className="text-2xl font-serif font-bold text-foreground">
-          Welcome back, {session?.user.name?.split(" ")[0] ?? "there"}
+          Welcome back, {user?.displayName?.split(" ")[0] ?? "there"}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           {completedMissions} of {data.missions.length} missions completed today
@@ -67,8 +65,8 @@ export default function DashboardPage() {
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-center gap-8">
             <ReadinessScore
-              score={data.readinessScore ?? 0}
-              daysUntilExam={data.daysUntilExam}
+              score={data.readiness_score ?? 0}
+              daysUntilExam={data.days_until_exam}
             />
             <div className="flex-1 w-full space-y-4">
               <div>
@@ -79,9 +77,9 @@ export default function DashboardPage() {
                   Based on your accuracy, speed, syllabus coverage, and consistency.
                 </p>
               </div>
-              {data.profile.weakSubjects.length > 0 && (
+              {data.profile.weak_subjects.length > 0 && (
                 <div className="text-xs bg-red-50 text-red-600 border border-red-100 rounded-lg px-3 py-2">
-                  Focus area: {data.profile.weakSubjects.join(", ")}
+                  Focus area: {data.profile.weak_subjects.join(", ")}
                 </div>
               )}
             </div>
@@ -91,9 +89,9 @@ export default function DashboardPage() {
 
       {/* Quick Stats */}
       <QuickStats
-        streak={data.gamification.currentStreak}
-        xpToday={data.todayStats.xpEarned}
-        questionsToday={data.todayStats.questionsAttempted}
+        streak={data.gamification.current_streak}
+        xpToday={data.today_stats.xp_earned}
+        questionsToday={data.today_stats.questions_attempted}
         accuracyToday={accuracyToday}
       />
 
@@ -108,7 +106,7 @@ export default function DashboardPage() {
               No missions assigned yet. Start practicing to unlock missions.
             </p>
           ) : (
-            data.missions.map((mission: any) => (
+            data.missions.map((mission) => (
               <MissionCard key={mission.id} mission={mission} />
             ))
           )}

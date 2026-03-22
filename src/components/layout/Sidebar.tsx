@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/hooks/useAuth";
 import {
   MessageCircle,
   LayoutDashboard,
@@ -24,7 +24,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const { user } = useAuth();
 
   return (
     <aside className="hidden md:flex flex-col w-56 min-h-screen bg-white border-r border-border px-4 py-8">
@@ -58,18 +58,18 @@ export function Sidebar() {
       </nav>
 
       {/* User info at bottom */}
-      {session?.user && (
+      {user && (
         <div className="px-2 pt-4 border-t border-border">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-semibold">
-              {session.user.name?.[0]?.toUpperCase() ?? "U"}
+              {user.displayName?.[0]?.toUpperCase() ?? "U"}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium truncate text-foreground">
-                {session.user.name ?? "Student"}
+                {user.displayName ?? "Student"}
               </p>
               <p className="text-xs text-muted-foreground truncate">
-                {session.user.email}
+                {user.email}
               </p>
             </div>
           </div>

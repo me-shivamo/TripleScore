@@ -4,20 +4,10 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Zap, CheckCircle2 } from "lucide-react";
-
-interface Mission {
-  id: string;
-  title: string;
-  description: string;
-  xpReward: number;
-  progress: number;
-  target: number;
-  completed: boolean;
-  type: "DAILY" | "WEEKLY";
-}
+import { MissionData } from "@/types/api";
 
 interface MissionCardProps {
-  mission: Mission;
+  mission: MissionData;
 }
 
 export function MissionCard({ mission }: MissionCardProps) {
@@ -63,7 +53,7 @@ export function MissionCard({ mission }: MissionCardProps) {
           </p>
           <Badge variant="gold" className="shrink-0 text-[10px] py-0 px-1.5">
             <Zap className="w-2.5 h-2.5 mr-0.5" />
-            {mission.xpReward}
+            {mission.xp_reward}
           </Badge>
         </div>
 

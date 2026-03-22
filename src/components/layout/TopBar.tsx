@@ -1,27 +1,28 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { Flame, Zap } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Progress } from "@/components/ui/progress";
 import { getXPProgressToNextLevel, getLevelFromXP } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { apiFetch } from "@/lib/api-client";
 
 export function TopBar() {
-  const { data: session } = useSession();
+  const { user } = useAuth();
 
   const { data: gamification } = useQuery({
     queryKey: ["gamification"],
     queryFn: async () => {
-      const res = await fetch("/api/dashboard");
+      const res = await apiFetch("/dashboard");
       if (!res.ok) return null;
       const data = await res.json();
       return data.gamification;
     },
-    enabled: !!session?.user,
+    enabled: !!user,
   });
 
   const xp = gamification?.xp ?? 0;
-  const streak = gamification?.currentStreak ?? 0;
+  const streak = gamification?.current_streak ?? 0;
   const level = getLevelFromXP(xp);
   const progress = getXPProgressToNextLevel(xp);
 

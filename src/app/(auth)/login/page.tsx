@@ -4,60 +4,55 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { login } from "@/services/auth";
+import { getOnboardingStatus } from "@/services/nova";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
-  const [loading, setLoading] = useState(false);
+  const { user, loading } = useAuth();
+  const [signingIn, setSigningIn] = useState(false);
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated — fetch onboarding status from backend
   useEffect(() => {
-    if (status === "authenticated") {
-      if (!session.user.onboardingCompleted) {
-        router.push("/chat");
-      } else {
-        router.push("/dashboard");
-      }
-    }
-  }, [status, session, router]);
+    if (loading || !user) return;
+    getOnboardingStatus()
+      .then((data) => {
+        if (data.onboarding_completed) {
+          router.push("/dashboard");
+        } else {
+          router.push("/chat");
+        }
+      })
+      .catch(() => router.push("/dashboard"));
+  }, [user, loading, router]);
 
   const handleGoogleSignIn = async () => {
-    setLoading(true);
+    setSigningIn(true);
     try {
       const provider = new GoogleAuthProvider();
-      const userCredential = await signInWithPopup(auth, provider);
-      const idToken = await userCredential.user.getIdToken();
+      await signInWithPopup(auth, provider);
 
-      const result = await signIn("credentials", {
-        idToken,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        throw new Error(result.error);
-      }
+      // Ensure backend creates/updates the user record
+      await login();
 
       toast.success("Welcome to TripleScore!");
-      // Redirect handled by useEffect above
+      // Redirect handled by the useEffect above (user state changes)
     } catch (err: any) {
-      console.error(err);
-      if (err.code === "auth/popup-closed-by-user") {
-        // User closed the popup, no toast needed
-      } else {
+      if (err.code !== "auth/popup-closed-by-user") {
         toast.error(err.message ?? "Sign in failed. Please try again.");
       }
     } finally {
-      setLoading(false);
+      setSigningIn(false);
     }
   };
 
-  if (status === "loading") {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -121,10 +116,10 @@ export default function LoginPage() {
           variant="gradient"
           size="lg"
           onClick={handleGoogleSignIn}
-          disabled={loading}
+          disabled={signingIn}
           className="rounded-full animate-pulse-glow w-fit"
         >
-          {loading ? (
+          {signingIn ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <>
@@ -150,7 +145,6 @@ export default function LoginPage() {
             </>
           )}
         </Button>
-
       </div>
 
       {/* RIGHT COLUMN — desktop only */}

@@ -1,61 +1,67 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useSession } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChatWindow } from "@/components/nova/ChatWindow";
 import { OnboardingChat } from "@/components/nova/OnboardingChat";
-import { useNovaChat } from "@/hooks/useNovaChat";
+import { useNovaChat, NovaMode } from "@/hooks/useNovaChat";
 import { useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
+import { getOnboardingStatus } from "@/services/nova";
 
 export default function ChatPage() {
-  const { data: session } = useSession();
+  const { user, loading } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
 
-  const { status: sessionStatus } = useSession();
-  const onboardingCompleted = session?.user.onboardingCompleted ?? false;
-  // Don't derive mode until session is resolved — prevents hook from getting wrong initial mode
-  const mode = sessionStatus === "loading"
-    ? "ONBOARDING"
-    : onboardingCompleted ? "COMPANION" : "ONBOARDING";
+  // Fetch onboarding status from backend
+  useEffect(() => {
+    if (!user) return;
+    getOnboardingStatus()
+      .then((data) => setOnboardingCompleted(data.onboarding_completed ?? false))
+      .catch(() => setOnboardingCompleted(false));
+  }, [user]);
+
+  const mode: NovaMode =
+    loading || onboardingCompleted === null
+      ? "ONBOARDING"
+      : onboardingCompleted
+      ? "COMPANION"
+      : "ONBOARDING";
 
   const { messages, isLoading, isHistoryLoading, sendMessage, stopStreaming } =
     useNovaChat(mode);
 
   const redirectPendingRef = useRef(false);
-  // Track whether we have started polling so we don't restart when onboardingCompleted flips
   const pollingStartedRef = useRef(false);
 
-  // Fire Nova's greeting only after session + history both loaded and no prior messages
+  // Fire Nova's greeting only after auth + history both loaded and no prior messages
   useEffect(() => {
-    if (sessionStatus === "loading" || isHistoryLoading) return;
+    if (loading || isHistoryLoading || onboardingCompleted === null) return;
     if (messages.length === 0 && !onboardingCompleted) {
       const timer = setTimeout(() => {
         sendMessage("__NOVA_INIT__");
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [sessionStatus, isHistoryLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, isHistoryLoading, onboardingCompleted]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll for onboarding completion every 5s — starts once session is loaded, runs until complete
+  // Poll for onboarding completion every 5s
   useEffect(() => {
-    if (sessionStatus === "loading") return;
+    if (loading || onboardingCompleted === null) return;
     if (onboardingCompleted || redirectPendingRef.current) return;
-    if (pollingStartedRef.current) return; // already polling — don't restart
+    if (pollingStartedRef.current) return;
     pollingStartedRef.current = true;
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch("/api/nova/onboarding-status");
-        if (!res.ok) return;
-        const { completed } = await res.json();
-        if (completed && !redirectPendingRef.current) {
+        const data = await getOnboardingStatus();
+        if (data.onboarding_completed && !redirectPendingRef.current) {
           redirectPendingRef.current = true;
           clearInterval(interval);
-          queryClient.invalidateQueries({ queryKey: ["session"] });
+          queryClient.invalidateQueries({ queryKey: ["dashboard"] });
           setTimeout(() => {
-            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
             router.push("/diagnostic");
           }, 3000);
         }
@@ -65,7 +71,7 @@ export default function ChatPage() {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [sessionStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, onboardingCompleted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (message: string) => {
     await sendMessage(message);
