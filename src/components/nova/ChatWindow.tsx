@@ -5,7 +5,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ChatInput } from "./ChatInput";
 import { NovaAvatar } from "./NovaAvatar";
 import type { Message } from "@/hooks/useNovaChat";
-import type { NovaMode } from "@/lib/nova/prompts";
+import type { NovaMode } from "@/hooks/useNovaChat";
 
 interface ChatWindowProps {
   messages: Message[];

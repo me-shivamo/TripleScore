@@ -15,6 +15,42 @@ import {
 } from "@/services/diagnostic";
 import { DiagnosticStartResponse, SubmitResult } from "@/types/api";
 
+// Map API snake_case question to component camelCase shape
+function toComponentQuestion(q: import("@/types/api").DiagnosticQuestion): DiagnosticQuestion {
+  return {
+    id: q.id,
+    subject: q.subject,
+    chapter: q.chapter,
+    topic: q.topic,
+    content: q.content,
+    questionType: q.question_type as "MCQ" | "INTEGER",
+    options: q.options,
+    difficulty: q.difficulty as "EASY" | "MEDIUM" | "HARD",
+  };
+}
+
+// Map component QuestionResult (camelCase) to API SubmitAttempt (snake_case)
+function toSubmitAttempts(results: QuestionResult[]) {
+  return results.map((r) => ({
+    question_id: r.questionId,
+    selected_option: r.selectedOption,
+    time_taken_secs: r.timeTakenSecs,
+  }));
+}
+
+// Map API ProfileInfo (snake_case) to SummaryCard's ProfileData (camelCase)
+function toProfileData(p: import("@/types/api").ProfileInfo | null) {
+  if (!p) return {};
+  return {
+    name: p.name,
+    examAttemptDate: p.exam_attempt_date,
+    strongSubjects: p.strong_subjects,
+    weakSubjects: p.weak_subjects,
+    previousScore: p.previous_score,
+    dailyStudyHours: p.daily_study_hours,
+  };
+}
+
 type Screen =
   | "loading"
   | "summary"
@@ -76,7 +112,7 @@ export default function DiagnosticPage() {
 
   const loadQuestions = async (subject: string, chapter: string) => {
     const data = await getQuestions(subject, chapter, 12);
-    return data.questions;
+    return data.questions.map(toComponentQuestion);
   };
 
   // ── Test 1 ──────────────────────────────────────────────────────────────────
@@ -91,7 +127,7 @@ export default function DiagnosticPage() {
 
   const handleTest1Complete = async (results: QuestionResult[]) => {
     setIsSubmitting(true);
-    const data = await submitDiagnostic(1, test1Subject, test1Chapter, results);
+    const data = await submitDiagnostic(1, test1Subject, test1Chapter, toSubmitAttempts(results));
     setTest1Result(data);
     setIsSubmitting(false);
     setScreen("test1-results");
@@ -109,7 +145,7 @@ export default function DiagnosticPage() {
 
   const handleTest2Complete = async (results: QuestionResult[]) => {
     setIsSubmitting(true);
-    const data = await submitDiagnostic(2, test2Subject, test2Chapter, results);
+    const data = await submitDiagnostic(2, test2Subject, test2Chapter, toSubmitAttempts(results));
     setTest2Result(data);
     setIsSubmitting(false);
     setScreen("final-results");
@@ -131,7 +167,7 @@ export default function DiagnosticPage() {
   if (screen === "summary") {
     return (
       <SummaryCard
-        profile={startData.profile}
+        profile={toProfileData(startData.profile)}
         onStart={() => setScreen("test1-select")}
         onSkip={handleSkip}
         isSkipping={isSkipping}

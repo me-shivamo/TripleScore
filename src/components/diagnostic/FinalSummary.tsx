@@ -1,7 +1,24 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { getMasteryLabel, getMasteryColor, getMasteryBg } from "@/lib/diagnostic/mastery-calculator";
+function getMasteryLabel(score: number) {
+  if (score >= 0.76) return "Strong";
+  if (score >= 0.51) return "Proficient";
+  if (score >= 0.26) return "Developing";
+  return "Needs Work";
+}
+function getMasteryColor(label: string) {
+  if (label === "Strong") return "text-emerald-600";
+  if (label === "Proficient") return "text-blue-600";
+  if (label === "Developing") return "text-amber-600";
+  return "text-red-600";
+}
+function getMasteryBg(label: string) {
+  if (label === "Strong") return "border-emerald-200 bg-emerald-50";
+  if (label === "Proficient") return "border-blue-200 bg-blue-50";
+  if (label === "Developing") return "border-amber-200 bg-amber-50";
+  return "border-red-200 bg-red-50";
+}
 import { cn } from "@/lib/utils";
 import { LayoutDashboard } from "lucide-react";
 

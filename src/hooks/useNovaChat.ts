@@ -39,11 +39,17 @@ export function useNovaChat(initialMode: NovaMode = "COMPANION") {
 
     getHistory()
       .then(({ messages: history }) => {
-        const filtered = history.filter(
-          (m) =>
-            m.content !== "__NOVA_INIT__" &&
-            !m.content.includes("__NOVA_ONBOARDING_COMPLETE__")
-        );
+        const filtered = history
+          .filter(
+            (m) =>
+              m.content !== "__NOVA_INIT__" &&
+              !m.content.includes("__NOVA_ONBOARDING_COMPLETE__")
+          )
+          .map((m) => ({
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          }));
         setMessages(filtered);
       })
       .catch(() => {})
